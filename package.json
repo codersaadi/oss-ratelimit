@@ -1,5 +1,5 @@
 {
-  "name": "redis-ratelimit",
+  "name": "@oss/redis-ratelimit",
   "version": "0.1.1",
   "description": "Flexible rate limiting library with Redis for TypeScript applications",
   "main": "dist/index.js",

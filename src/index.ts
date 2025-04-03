@@ -78,7 +78,7 @@ export const createSingletonRateLimiter = (
     envRedisKey?: string;
   }
 ) => {
-  const redis = getRedisSingleClient(props?.envRedisKey ?? 'REDIS_CLIENT');
+  const redis = getRedisSingleClient(props?.envRedisKey ?? 'REDIS_URL');
   return createRateLimiter(redis, props);
 };
 
