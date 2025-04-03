@@ -15,13 +15,13 @@ A robust Redis-based rate limiting library inspired by Upstash's design, support
 ## Installation 📦
 
 ```bash
-npm install oss-redis-ratelimit redis
+npm install oss-ratelimit redis
 ```
 
 
 ```ts
 import { createClient } from 'redis';
-import { Ratelimit, slidingWindow } from 'oss-redis-ratelimit';
+import { Ratelimit, slidingWindow } from 'oss-ratelimit';
 
 const redis = createClient({ url: 'redis://localhost:6379' });
 await redis.connect();
@@ -38,7 +38,7 @@ console.log(result);
 ### Singleton Rate Limiter
 
 ```ts
-import { createSingletonRateLimiter } from 'oss-redis-ratelimit';
+import { createSingletonRateLimiter } from 'oss-ratelimit';
 
 const limiter = createSingletonRateLimiter({
   limiter: { limit: 20, interval: 60000 },
@@ -53,19 +53,19 @@ console.log(res);
 
 ### Fixed Window
 ```ts
-import { fixedWindow } from 'oss-redis-ratelimit';
+import { fixedWindow } from 'oss-ratelimit';
 const limiter = fixedWindow(100, '1 m');
 ```
 
 ### Sliding Window
 ```ts
-import { slidingWindow } from 'oss-redis-ratelimit';
+import { slidingWindow } from 'oss-ratelimit';
 const limiter = slidingWindow(50, '30 s');
 ```
 
 ### Token Bucket
 ```ts
-import { tokenBucket } from 'oss-redis-ratelimit';
+import { tokenBucket } from 'oss-ratelimit';
 const limiter = tokenBucket(5, '10 s', 20);
 ```
 
