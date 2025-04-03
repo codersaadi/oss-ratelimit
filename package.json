@@ -1,0 +1,51 @@
+{
+  "name": "redis-ratelimit",
+  "version": "0.1.1",
+  "description": "Flexible rate limiting library with Redis for TypeScript applications",
+  "main": "dist/index.js",
+  "module": "dist/index.mjs",
+  "types": "dist/index.d.ts",
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "build": "tsup",
+    "dev": "tsup --watch",
+    "format": "biome format --write .",
+    "lint": "biome check .",
+    "lint:fix": "biome check --apply .",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage",
+    "prepublishOnly": "npm run lint && npm test && npm run build",
+    "release": "npm version patch && npm publish",
+    "release:minor": "npm version minor && npm publish",
+    "release:major": "npm version major && npm publish"
+  },
+  "keywords": [
+    "rate-limit",
+    "ratelimit",
+    "redis",
+    "token-bucket",
+    "sliding-window",
+    "fixed-window"
+  ],
+  "author": "codersaadi",
+  "license": "MIT",
+  "devDependencies": {
+    "@biomejs/biome": "1.5.3",
+    "@types/node": "^20.10.0",
+    "@vitest/coverage-v8": "^0.34.6",
+    "tsup": "^8.0.1",
+    "typescript": "^5.2.2",
+    "vitest": "^0.34.6"
+  },
+  "dependencies": {
+    "redis": "^4.6.10"
+  },
+  "peerDependencies": {
+    "redis": "^4.0.0"
+  }
+}
