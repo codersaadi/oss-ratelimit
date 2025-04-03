@@ -1,0 +1,9 @@
+src/
+tests/
+coverage/
+.github/
+.vscode/
+biome.json
+tsup.config.ts
+vitest.config.ts
+*.log
