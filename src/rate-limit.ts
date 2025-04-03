@@ -1,4 +1,5 @@
 import { RedisClientType } from 'redis';
+import { RatelimitError } from '.';
 import {
   FixedWindowOptions,
   LimiterType,
@@ -7,7 +8,6 @@ import {
   SlidingWindowOptions,
   TokenBucketOptions,
 } from './types';
-import { RatelimitError } from '.';
 // Function to detect limiter type
 const getLimiterType = (limiter: LimiterType): string => {
   if ('refillRate' in limiter) return 'tokenBucket';
