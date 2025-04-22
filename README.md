@@ -70,7 +70,7 @@ const limiter = tokenBucket(5, '10 s', 20);
 ```
 
 ## Environment Variables
-- `REDIS_URL` - Redis connection URL. (only needed when you use 'createSingletonRateLimiter')
+- `REDIS_URL` - Redis connection URL, can be changed using envRedisKey. (only needed when you use 'createSingletonRateLimiter' or when you used the default options)
 
 ## Error Handling ⚠️
  **RatelimitError**: The library throws RatelimitError for:
