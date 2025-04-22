@@ -1195,7 +1195,6 @@ export const createSingletonRateLimiter = async (
   return singletonInstance;
 };
 
-// WILL ADD DECORATOR LATER FOR CLASSES 
 
 // Export everything
 export default {
