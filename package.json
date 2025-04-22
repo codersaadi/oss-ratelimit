@@ -1,6 +1,6 @@
 {
   "name": "oss-ratelimit",
-  "version": "0.1.4",
+  "version": "1.0.0",
   "description": "Flexible rate limiting library with Redis for TypeScript applications",
   "main": "dist/index.js",
   "module": "dist/index.mjs",
