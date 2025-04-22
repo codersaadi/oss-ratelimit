@@ -1,5 +1,5 @@
-import { createClient, RedisClientType } from 'redis';
 import { EventEmitter } from 'events';
+import { RedisClientType, createClient } from 'redis';
 
 /**
  * @package open-ratelimit
@@ -38,7 +38,7 @@ export class RedisConnectionError extends RatelimitError {
 export class RateLimitExceededError extends RatelimitError {
   public readonly retryAfter: number;
   public readonly identifier: string;
-  
+
   constructor(identifier: string, retryAfter: number) {
     super(`Rate limit exceeded for "${identifier}". Retry after ${retryAfter} seconds.`);
     this.name = 'RateLimitExceededError';
@@ -54,11 +54,11 @@ export class RateLimitExceededError extends RatelimitError {
 /**
  * Time window definition using type literals
  */
-export type TimeWindow = 
-  | `${number} ms` 
-  | `${number} s` 
-  | `${number} m` 
-  | `${number} h` 
+export type TimeWindow =
+  | `${number} ms`
+  | `${number} s`
+  | `${number} m`
+  | `${number} h`
   | `${number} d`;
 
 /**
@@ -79,16 +79,16 @@ export const parseTimeWindow = (window: TimeWindow): number => {
   try {
     const [valueStr, unit] = window.trim().split(/\s+/);
     const value = parseInt(valueStr, 10);
-    
+
     if (Number.isNaN(value) || value <= 0) {
       throw new RatelimitError(`Invalid time value: ${valueStr}`);
     }
-    
+
     const unitMultiplier = TIME_UNITS[unit as keyof typeof TIME_UNITS];
     if (!unitMultiplier) {
       throw new RatelimitError(`Invalid time unit: ${unit}. Must be one of: ms, s, m, h, d`);
     }
-    
+
     return value * unitMultiplier;
   } catch (error) {
     if (error instanceof RatelimitError) throw error;
@@ -136,10 +136,7 @@ export interface TokenBucketOptions extends BaseLimiterOptions {
 /**
  * Union type for all limiter algorithms
  */
-export type LimiterType = 
-  | FixedWindowOptions 
-  | SlidingWindowOptions 
-  | TokenBucketOptions;
+export type LimiterType = FixedWindowOptions | SlidingWindowOptions | TokenBucketOptions;
 
 // ----------------------
 // Limiter Factory Functions
@@ -198,7 +195,7 @@ class EphemeralCache {
   constructor(ttlMs = 60000) {
     this.cache = new Map();
     this.ttl = ttlMs;
-    
+
     // Clean expired items periodically
     this.cleanupInterval = setInterval(() => this.cleanup(), Math.min(ttlMs / 2, 30000));
   }
@@ -209,7 +206,7 @@ class EphemeralCache {
   get(key: string): number {
     const now = Date.now();
     const item = this.cache.get(key);
-    
+
     if (!item || item.expires < now) return 0;
     return item.count;
   }
@@ -230,14 +227,14 @@ class EphemeralCache {
   increment(key: string, windowMs: number): number {
     const now = Date.now();
     const item = this.cache.get(key) || { count: 0, expires: now + windowMs };
-    
+
     if (item.expires < now) {
       item.count = 1;
       item.expires = now + windowMs;
     } else {
       item.count++;
     }
-    
+
     this.cache.set(key, item);
     return item.count;
   }
@@ -305,7 +302,7 @@ export const getRedisClient = async (options: RedisOptions = {}): Promise<RedisC
   }
 
   const mergedOptions = { ...DEFAULT_REDIS_OPTIONS, ...options };
-  
+
   try {
     redisClient = createClient({
       url: mergedOptions.url,
@@ -329,9 +326,7 @@ export const getRedisClient = async (options: RedisOptions = {}): Promise<RedisC
     await redisClient.connect();
     return redisClient;
   } catch (error) {
-    throw new RedisConnectionError(
-      error instanceof Error ? error.message : String(error)
-    );
+    throw new RedisConnectionError(error instanceof Error ? error.message : String(error));
   }
 };
 
@@ -433,28 +428,28 @@ export class Ratelimit extends EventEmitter {
    */
   constructor(config: RatelimitConfig) {
     super();
-    
+
     const finalConfig = { ...DEFAULT_CONFIG, ...config };
-    
+
     // Handle Redis client or options
     if ('isOpen' in config.redis) {
       this.redis = config.redis as RedisClientType;
     } else {
       this.redis = getRedisClient(config.redis as RedisOptions);
     }
-    
+
     this.limiter = finalConfig.limiter;
     this.prefix = finalConfig.prefix as string;
     this.analytics = !!finalConfig.analytics;
     this.timeout = finalConfig.timeout as number;
     this.failOpen = !!finalConfig.failOpen;
     this.silent = !!finalConfig.silent;
-    
+
     // Create ephemeral cache if requested
     if (finalConfig.ephemeralCache) {
       this.ephemeralCache = new EphemeralCache(finalConfig.ephemeralCacheTTL);
     }
-    
+
     // Initialize Lua scripts
     this.initScripts();
   }
@@ -464,7 +459,9 @@ export class Ratelimit extends EventEmitter {
    */
   private initScripts(): void {
     // Sliding Window script
-    this.scripts.set('slidingWindow', `
+    this.scripts.set(
+      'slidingWindow',
+      `
       local key = KEYS[1]
       local analyticsKey = KEYS[2]
       local now = tonumber(ARGV[1])
@@ -525,10 +522,13 @@ export class Ratelimit extends EventEmitter {
         pending,
         throughput
       }
-    `);
+    `
+    );
 
     // Fixed Window script
-    this.scripts.set('fixedWindow', `
+    this.scripts.set(
+      'fixedWindow',
+      `
       local key = KEYS[1]
       local analyticsKey = KEYS[2]
       local limit = tonumber(ARGV[1])
@@ -573,10 +573,13 @@ export class Ratelimit extends EventEmitter {
         count,
         throughput
       }
-    `);
+    `
+    );
 
     // Token Bucket script
-    this.scripts.set('tokenBucket', `
+    this.scripts.set(
+      'tokenBucket',
+      `
       local key = KEYS[1]
       local analyticsKey = KEYS[2]
       local now = tonumber(ARGV[1])
@@ -636,7 +639,8 @@ export class Ratelimit extends EventEmitter {
         bucketCapacity - tokens,
         throughput
       }
-    `);
+    `
+    );
   }
 
   /**
@@ -652,27 +656,26 @@ export class Ratelimit extends EventEmitter {
       });
 
       const redis = await Promise.race([this.redis, timeoutPromise]);
-      
+
       // Check if Redis is connected
       if (!redis.isOpen) {
         await redis.connect();
       }
-      
+
       // Verify connection with ping
       await redis.ping();
-      
+
       return redis;
     } catch (error) {
-      this.emit('error', new RedisConnectionError(
-        error instanceof Error ? error.message : String(error)
-      ));
-      
+      this.emit(
+        'error',
+        new RedisConnectionError(error instanceof Error ? error.message : String(error))
+      );
+
       if (!this.failOpen) {
-        throw new RedisConnectionError(
-          error instanceof Error ? error.message : String(error)
-        );
+        throw new RedisConnectionError(error instanceof Error ? error.message : String(error));
       }
-      
+
       // If fail-open is enabled, we need to return something that won't break
       // downstream code, but this will never actually be used
       return Promise.resolve(this.redis) as Promise<RedisClientType>;
@@ -685,13 +688,13 @@ export class Ratelimit extends EventEmitter {
   async limit(identifier: string): Promise<RatelimitResponse> {
     const now = Date.now();
     const key = `${this.prefix}:${identifier}`;
-    
+
     try {
       // Try Redis first
       return await this.applyLimit(key, now);
     } catch (error) {
       this.emit('error', error);
-      
+
       // Handle Redis failure
       if (this.ephemeralCache && this.limiter.type === 'slidingWindow') {
         if (!this.silent) {
@@ -701,16 +704,16 @@ export class Ratelimit extends EventEmitter {
             }`
           );
         }
-        
+
         // Fall back to ephemeral cache
         return this.applyEphemeralLimit(key, identifier, now);
       }
-      
+
       // If Redis fails and no ephemeral cache or incompatible limiter type
       if (!this.failOpen) {
         throw error;
       }
-      
+
       // If fail-open is enabled, allow the request
       this.emit('failOpen', { identifier, error });
       if (!this.silent) {
@@ -720,7 +723,7 @@ export class Ratelimit extends EventEmitter {
           }`
         );
       }
-      
+
       // Get limit based on limiter type
       const limit = 'limit' in this.limiter ? this.limiter.limit : 10;
       return {
@@ -737,7 +740,7 @@ export class Ratelimit extends EventEmitter {
    */
   private async applyLimit(key: string, now: number): Promise<RatelimitResponse> {
     const redis = await this.getRedis();
-    
+
     switch (this.limiter.type) {
       case 'slidingWindow':
         return this.applySlidingWindowLimit(redis, key, now);
@@ -746,8 +749,12 @@ export class Ratelimit extends EventEmitter {
       case 'tokenBucket':
         return this.applyTokenBucketLimit(redis, key, now);
       default:
-        throw new RatelimitError(`Unknown limiter type: ${// biome-ignore lint/suspicious/noExplicitAny: <explanation>
-(this.limiter as any).type}`);
+        throw new RatelimitError(
+          `Unknown limiter type: ${
+            // biome-ignore lint/suspicious/noExplicitAny: <explanation>
+            (this.limiter as any).type
+          }`
+        );
     }
   }
 
@@ -762,19 +769,16 @@ export class Ratelimit extends EventEmitter {
     try {
       const limiter = this.limiter as SlidingWindowOptions;
       const analyticsKey = `${key}:analytics`;
-      
-      const result = await redis.eval(
-        this.scripts.get('slidingWindow') as string,
-        {
-          keys: [key, analyticsKey],
-          arguments: [
-            now.toString(),
-            limiter.windowMs.toString(),
-            limiter.limit.toString(),
-            this.analytics ? '1' : '0',
-          ],
-        }
-      );
+
+      const result = await redis.eval(this.scripts.get('slidingWindow') as string, {
+        keys: [key, analyticsKey],
+        arguments: [
+          now.toString(),
+          limiter.windowMs.toString(),
+          limiter.limit.toString(),
+          this.analytics ? '1' : '0',
+        ],
+      });
 
       if (!Array.isArray(result)) {
         throw new RatelimitError('Invalid response from Redis');
@@ -800,7 +804,7 @@ export class Ratelimit extends EventEmitter {
       if (this.ephemeralCache) {
         this.ephemeralCache.set(key, limiter.limit - response.remaining, limiter.windowMs);
       }
-      
+
       // Emit events
       this.emit(response.success ? 'allowed' : 'limited', {
         identifier: key.substring(this.prefix.length + 1),
@@ -826,23 +830,20 @@ export class Ratelimit extends EventEmitter {
   ): Promise<RatelimitResponse> {
     try {
       const limiter = this.limiter as FixedWindowOptions;
-      
+
       // Create window key with fixed time boundary
       const windowKey = `${key}:${Math.floor(now / limiter.windowMs)}`;
       const analyticsKey = `${key}:analytics`;
-      
-      const result = await redis.eval(
-        this.scripts.get('fixedWindow') as string,
-        {
-          keys: [windowKey, analyticsKey],
-          arguments: [
-            limiter.limit.toString(),
-            limiter.windowMs.toString(),
-            this.analytics ? '1' : '0',
-            now.toString(),
-          ],
-        }
-      );
+
+      const result = await redis.eval(this.scripts.get('fixedWindow') as string, {
+        keys: [windowKey, analyticsKey],
+        arguments: [
+          limiter.limit.toString(),
+          limiter.windowMs.toString(),
+          this.analytics ? '1' : '0',
+          now.toString(),
+        ],
+      });
 
       if (!Array.isArray(result)) {
         throw new RatelimitError('Invalid response from Redis');
@@ -862,7 +863,7 @@ export class Ratelimit extends EventEmitter {
         response.pending = Number(result[5]);
         response.throughput = Number(result[6]);
       }
-      
+
       // Emit events
       this.emit(response.success ? 'allowed' : 'limited', {
         identifier: key.substring(this.prefix.length + 1),
@@ -889,20 +890,17 @@ export class Ratelimit extends EventEmitter {
     try {
       const limiter = this.limiter as TokenBucketOptions;
       const analyticsKey = `${key}:analytics`;
-      
-      const result = await redis.eval(
-        this.scripts.get('tokenBucket') as string,
-        {
-          keys: [key, analyticsKey],
-          arguments: [
-            now.toString(),
-            limiter.refillRate.toString(),
-            limiter.interval.toString(),
-            limiter.limit.toString(),
-            this.analytics ? '1' : '0',
-          ],
-        }
-      );
+
+      const result = await redis.eval(this.scripts.get('tokenBucket') as string, {
+        keys: [key, analyticsKey],
+        arguments: [
+          now.toString(),
+          limiter.refillRate.toString(),
+          limiter.interval.toString(),
+          limiter.limit.toString(),
+          this.analytics ? '1' : '0',
+        ],
+      });
 
       if (!Array.isArray(result)) {
         throw new RatelimitError('Invalid response from Redis');
@@ -922,7 +920,7 @@ export class Ratelimit extends EventEmitter {
         response.pending = Number(result[5]);
         response.throughput = Number(result[6]);
       }
-      
+
       // Emit events
       this.emit(response.success ? 'allowed' : 'limited', {
         identifier: key.substring(this.prefix.length + 1),
@@ -941,36 +939,32 @@ export class Ratelimit extends EventEmitter {
   /**
    * Apply rate limit using ephemeral cache (for fallback)
    */
-  private applyEphemeralLimit(
-    key: string,
-    identifier: string,
-    now: number
-  ): RatelimitResponse {
+  private applyEphemeralLimit(key: string, identifier: string, now: number): RatelimitResponse {
     if (!this.ephemeralCache) {
       throw new RatelimitError('Ephemeral cache not available');
     }
-    
+
     if (this.limiter.type !== 'slidingWindow') {
       throw new RatelimitError(
         `Ephemeral cache only supports sliding window, got: ${this.limiter.type}`
       );
     }
-    
+
     const limiter = this.limiter as SlidingWindowOptions;
     const count = this.ephemeralCache.increment(key, limiter.windowMs);
     const success = count <= limiter.limit;
-    
+
     const response: RatelimitResponse = {
       success,
       limit: limiter.limit,
       remaining: Math.max(0, limiter.limit - count),
       reset: now + limiter.windowMs,
     };
-    
+
     if (!success) {
       response.retryAfter = Math.ceil(limiter.windowMs / 1000);
     }
-    
+
     // Emit events
     this.emit(success ? 'allowed' : 'limited', {
       identifier,
@@ -978,52 +972,45 @@ export class Ratelimit extends EventEmitter {
       limit: response.limit,
       fromCache: true,
     });
-    
+
     return response;
   }
 
   /**
    * Block until rate limit allows or max wait time is reached
    */
-  async block(identifier: string, options?: {
-    maxWaitMs?: number;
-    maxAttempts?: number;
-    retryDelayMs?: number;
-  }): Promise<RatelimitResponse> {
-    const {
-      maxWaitMs = 5000,
-      maxAttempts = 50,
-      retryDelayMs = 100,
-    } = options || {};
-    
+  async block(
+    identifier: string,
+    options?: {
+      maxWaitMs?: number;
+      maxAttempts?: number;
+      retryDelayMs?: number;
+    }
+  ): Promise<RatelimitResponse> {
+    const { maxWaitMs = 5000, maxAttempts = 50, retryDelayMs = 100 } = options || {};
+
     const startTime = Date.now();
     let attempts = 0;
-    
+
     while (attempts < maxAttempts) {
       attempts++;
-      
+
       const response = await this.limit(identifier);
       if (response.success) {
         return response;
       }
-      
+
       const currentTime = Date.now();
       if (currentTime - startTime >= maxWaitMs) {
-        throw new RateLimitExceededError(
-          identifier,
-          response.retryAfter || 1
-        );
+        throw new RateLimitExceededError(identifier, response.retryAfter || 1);
       }
-      
+
       // Dynamic backoff based on retry-after, but within bounds
       const waitTime = Math.max(
         50,
-        Math.min(
-          1000,
-          response.retryAfter ? (response.retryAfter * 1000) / 4 : retryDelayMs
-        )
+        Math.min(1000, response.retryAfter ? (response.retryAfter * 1000) / 4 : retryDelayMs)
       );
-      
+
       // Emit waiting event
       this.emit('waiting', {
         identifier,
@@ -1031,16 +1018,13 @@ export class Ratelimit extends EventEmitter {
         waitTime,
         elapsed: currentTime - startTime,
       });
-      
+
       // Wait before retry
       await new Promise((resolve) => setTimeout(resolve, waitTime));
     }
-    
+
     // This is a safeguard in case we reach max attempts
-    throw new RateLimitExceededError(
-      identifier,
-      1
-    );
+    throw new RateLimitExceededError(identifier, 1);
   }
 
   /**
@@ -1050,46 +1034,46 @@ export class Ratelimit extends EventEmitter {
     try {
       const redis = await this.getRedis();
       const key = `${this.prefix}:${identifier}`;
-      
+
       // Clear all keys related to this identifier
-      const keys = [
-        key,
-        `${key}:analytics`,
-      ];
-      
+      const keys = [key, `${key}:analytics`];
+
       // For fixed window, we need to find all window keys
       if (this.limiter.type === 'fixedWindow') {
         const pattern = `${key}:*`;
         const scanResult = await redis.scan(0, { MATCH: pattern, COUNT: 100 });
-        
+
         if (scanResult.keys.length > 0) {
           keys.push(...scanResult.keys);
         }
       }
-      
+
       // Delete all keys
       if (keys.length > 0) {
         await redis.del(keys);
       }
-      
+
       // Also clear ephemeral cache if available
       if (this.ephemeralCache) {
         this.ephemeralCache.set(key, 0, 0);
       }
-      
+
       this.emit('reset', { identifier });
       return true;
     } catch (error) {
-      this.emit('error', new RatelimitError(
-        `Failed to reset rate limit: ${error instanceof Error ? error.message : String(error)}`
-      ));
-      
+      this.emit(
+        'error',
+        new RatelimitError(
+          `Failed to reset rate limit: ${error instanceof Error ? error.message : String(error)}`
+        )
+      );
+
       if (!this.failOpen) {
         throw new RatelimitError(
           `Failed to reset rate limit: ${error instanceof Error ? error.message : String(error)}`
         );
       }
-      
+
       return false;
     }
   }
@@ -1104,7 +1088,7 @@ export class Ratelimit extends EventEmitter {
     reset: number;
   }> {
     const response = await this.limit(identifier);
-    
+
     // Return limit info without consuming a token
     return {
       used: response.limit - response.remaining,
@@ -1129,13 +1113,13 @@ export class Ratelimit extends EventEmitter {
     if (this.ephemeralCache) {
       this.ephemeralCache.destroy();
     }
-    
+
     // Don't close Redis if it was passed in
     if (typeof this.redis === 'object' && 'quit' in this.redis) {
       // We don't want to close a client that might be shared
       // Only close if we created it
     }
-    
+
     this.removeAllListeners();
   }
 }
@@ -1148,12 +1132,12 @@ export class Ratelimit extends EventEmitter {
  * Create a rate limiter with default Redis client
  */
 export const createRateLimiter = async (
-  config: Omit<RatelimitConfig, 'redis'> & { 
+  config: Omit<RatelimitConfig, 'redis'> & {
     redis?: RedisOptions;
   }
 ): Promise<Ratelimit> => {
   const redisClient = await getRedisClient(config.redis || {});
-  
+
   return new Ratelimit({
     redis: redisClient,
     ...config,
@@ -1166,7 +1150,7 @@ export const createRateLimiter = async (
 let singletonInstance: Ratelimit | null = null;
 
 export const createSingletonRateLimiter = async (
-  config?: Omit<RatelimitConfig, 'redis'> & { 
+  config?: Omit<RatelimitConfig, 'redis'> & {
     redis?: RedisOptions;
     envRedisKey?: string;
   }
@@ -1174,27 +1158,26 @@ export const createSingletonRateLimiter = async (
   if (singletonInstance) {
     return singletonInstance;
   }
-  
-  const finalConfig : Partial<RatelimitConfig> & { 
+
+  const finalConfig: Partial<RatelimitConfig> & {
     redis?: RedisOptions;
     envRedisKey?: string;
-  }  = config || {};
-  
+  } = config || {};
+
   // Use environment variable if specified
   if (finalConfig.envRedisKey) {
     finalConfig.redis = {
       url: process.env[finalConfig.envRedisKey],
     };
   }
-  
+
   singletonInstance = await createRateLimiter({
     limiter: slidingWindow(10, '10 s'),
     ...finalConfig,
   });
-  
+
   return singletonInstance;
 };
-
 
 // Export everything
 export default {
@@ -1211,4 +1194,3 @@ export default {
   RedisConnectionError,
   RateLimitExceededError,
 };
-
