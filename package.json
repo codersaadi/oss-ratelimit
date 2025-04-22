@@ -30,7 +30,8 @@
     "redis",
     "token-bucket",
     "sliding-window",
-    "fixed-window"
+    "fixed-window",
+    "rate-limiting"
   ],
   "author": "codersaadi",
   "license": "MIT",
