@@ -3,7 +3,6 @@ import { RedisClientType, createClient } from 'redis';
 import { initRateLimit } from './client-registry';
 import { initializeLimiters } from './initialize-limiter';
 
-
 /**
  * @package open-ratelimit
  * A production-ready, open-source rate limiter with multiple algorithms
@@ -1157,14 +1156,13 @@ export { initRateLimit } from './client-registry'; // Export the builder init fu
 export type { RateLimitBuilder } from './client-registry'; // Export the builder type interface
 // Export everything
 
-
 export {
   InitLimitersOptions,
   RegisterConfigParam,
   initializeLimiters,
   createLimiterAccessor,
-  getInitializedLimiter
-} from './initialize-limiter'
+  getInitializedLimiter,
+} from './initialize-limiter';
 export default {
   Ratelimit,
   createRateLimiter,
