@@ -1,5 +1,8 @@
 import { EventEmitter } from 'events';
 import { RedisClientType, createClient } from 'redis';
+import { initRateLimit } from './client-registry';
+import { initializeLimiters } from './initialize-limiter';
+
 
 /**
  * @package open-ratelimit
@@ -1128,8 +1131,14 @@ export class Ratelimit extends EventEmitter {
 // Factory Functions
 // ----------------------
 
+// --- Potentially Deprecated Factory Function ---
 /**
- * Create a rate limiter with default Redis client
+ * Creates a single rate limiter instance with its own Redis client connection.
+ * Does not use the shared client management features of the registry.
+ * Consider using `createSingletonRateLimiter` with appropriate Redis options instead
+ * if client reuse is desired.
+ *
+ * @deprecated Consider using createSingletonRateLimiter with the registry for better client management.
  */
 export const createRateLimiter = async (
   config: Omit<RatelimitConfig, 'redis'> & {
@@ -1144,46 +1153,21 @@ export const createRateLimiter = async (
   });
 };
 
-/**
- * Create and reuse a singleton rate limiter instance
- */
-let singletonInstance: Ratelimit | null = null;
-
-export const createSingletonRateLimiter = async (
-  config?: Omit<RatelimitConfig, 'redis'> & {
-    redis?: RedisOptions;
-    envRedisKey?: string;
-  }
-): Promise<Ratelimit> => {
-  if (singletonInstance) {
-    return singletonInstance;
-  }
-
-  const finalConfig: Partial<RatelimitConfig> & {
-    redis?: RedisOptions;
-    envRedisKey?: string;
-  } = config || {};
-
-  // Use environment variable if specified
-  if (finalConfig.envRedisKey) {
-    finalConfig.redis = {
-      url: process.env[finalConfig.envRedisKey],
-    };
-  }
-
-  singletonInstance = await createRateLimiter({
-    limiter: slidingWindow(10, '10 s'),
-    ...finalConfig,
-  });
-
-  return singletonInstance;
-};
-
+export { initRateLimit } from './client-registry'; // Export the builder init function
+export type { RateLimitBuilder } from './client-registry'; // Export the builder type interface
 // Export everything
+
+
+export {
+  InitLimitersOptions,
+  RegisterConfigParam,
+  initializeLimiters,
+  createLimiterAccessor,
+  getInitializedLimiter
+} from './initialize-limiter'
 export default {
   Ratelimit,
   createRateLimiter,
-  createSingletonRateLimiter,
   fixedWindow,
   slidingWindow,
   tokenBucket,
