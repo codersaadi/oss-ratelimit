@@ -244,13 +244,13 @@ export interface RateLimitBuilder<TNames extends string> {
   on: (
     eventName: 'redisConnect' | 'redisError' | 'limiterRegister' | 'limiterError' | 'close',
     // biome-ignore lint/suspicious/noExplicitAny: <explanation>
-listener: (...args: any[]) => void
+    listener: (...args: any[]) => void
   ) => RateLimitBuilder<TNames>; // Returns typed builder
   /** Allows removing registry event listeners */
   off: (
     eventName: 'redisConnect' | 'redisError' | 'limiterRegister' | 'limiterError' | 'close',
     // biome-ignore lint/suspicious/noExplicitAny: <explanation>
-listener: (...args: any[]) => void
+    listener: (...args: any[]) => void
   ) => RateLimitBuilder<TNames>; // Returns typed builder
   /** Attempts to get the managed Redis client promise based on configuration key */
   getClient: (config: { redis?: RedisOptions; envRedisKey?: string }) =>
