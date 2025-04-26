@@ -1,0 +1,93 @@
+---
+title: Concepts  & Algorithms
+description:  Understand the core concepts behind rate limiting (like token bucket, sliding window) and learn about the specific algorithms implemented within oss-ratelimit.
+---
+import { Tab, Tabs } from 'fumadocs-ui/components/tabs';
+
+## Core Concepts
+
+### Identifier
+
+The `identifier` is a unique string used to track requests for a specific user, IP address, API key, or any other entity you want to rate limit. This is the primary argument passed to the `.limit()` method.
+
+### Redis
+
+Redis is used as the fast, distributed backend store for tracking request counts or tokens. `oss-ratelimit` uses efficient Lua scripts to perform atomic operations directly on the Redis server, minimizing latency and race conditions.
+
+### Algorithms
+
+`oss-ratelimit` provides several common rate limiting algorithms:
+
+*   **Fixed Window:** Counts requests within discrete time windows (e.g., 10 requests per minute). Simple, but can allow bursts at window edges.
+*   **Sliding Window:** Counts requests within a rolling time window. Smoother than Fixed Window, generally preferred for API rate limiting. More resource-intensive.
+*   **Token Bucket:** Allows bursts based on accumulated tokens that refill over time. Good for throttling based on average rate while allowing occasional peaks.
+
+Choose the algorithm that best suits your specific use case.
+
+
+## Algorithms In Depth
+
+<Tabs items={['Fixed Window', 'Sliding Window', 'Token Bucket']}>
+  <Tab value="Fixed Window">
+    <p>Counts requests within fixed, non-overlapping time intervals.</p>
+
+    **Configuration:**
+    ```typescript title="Fixed Window Example"
+    import { fixedWindow } from 'oss-ratelimit';
+
+    const fwLimiter = fixedWindow(
+      100,    // Max 100 requests
+      '1 h'   // Per hour window (windows reset on the hour)
+    );
+    ```
+
+    **Use Case:** Simple limits like "max 5 login attempts per 15 minutes".
+
+    **Pros:** Simple to understand and implement, lower Redis resource usage.
+    **Cons:** Allows double the rate limit burst at the boundary between two windows.
+
+  </Tab>
+  <Tab value="Sliding Window">
+     <p>Counts requests within a rolling time window ending at the current request time. Provides smoother limiting.</p>
+
+    **Configuration:**
+    ```typescript title="Sliding Window Example"
+    import { slidingWindow } from 'oss-ratelimit';
+
+    const swLimiter = slidingWindow(
+      20,    // Max 20 requests
+      '10 s' // In any 10-second sliding period
+    );
+    ```
+
+    **Use Case:** Common for API rate limiting (e.g., "max 1000 API calls per hour"). This is generally the recommended default for stateless services.
+
+    **Pros:** Smoother rate limiting, prevents edge bursts seen in Fixed Window.
+    **Cons:** More computationally expensive and uses more Redis memory (stores timestamps).
+
+     <Callout type='info'>
+        The Ephemeral Cache fallback mechanism currently only supports the Sliding Window algorithm.
+     </Callout>
+
+  </Tab>
+  <Tab value="Token Bucket">
+    <p>Simulates a bucket holding tokens. Requests consume tokens, and the bucket refills at a constant rate. Allows for bursts up to the bucket's capacity.</p>
+
+    **Configuration:**
+    ```typescript title="Token Bucket Example"
+    import { tokenBucket } from 'oss-ratelimit';
+
+    const tbLimiter = tokenBucket(
+      5,       // Refill 5 tokens...
+      '1 m',   // ...every minute
+      20       // Bucket capacity (max burst) is 20 tokens
+    );
+    ```
+
+     **Use Case:** Throttling background jobs, controlling access to expensive operations, allowing bursts after periods of inactivity.
+
+    **Pros:** Allows bursts, smooth average rate, decoupled refill and consumption.
+    **Cons:** Slightly more complex state to manage (tokens + last refill time).
+
+  </Tab>
+</Tabs>

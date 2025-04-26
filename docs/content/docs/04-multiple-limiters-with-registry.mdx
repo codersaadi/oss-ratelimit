@@ -1,0 +1,415 @@
+---
+title: Manage Multiple Limiters (Recommended)
+description: Learn the recommended pattern for defining and applying different rate limits to various API endpoints, user tiers, or specific actions within your application using oss-ratelimit.
+---
+
+import { Card, Cards } from 'fumadocs-ui/components/card';
+import { Accordion, Accordions } from 'fumadocs-ui/components/accordion';
+import { Callout } from 'fumadocs-ui/components/callout';
+import { File, Folder, Files } from 'fumadocs-ui/components/files';
+import { TypeTable } from 'fumadocs-ui/components/type-table';
+import { Tab, Tabs } from 'fumadocs-ui/components/tabs';
+import { Step, Steps } from 'fumadocs-ui/components/steps';
+
+## Client & Registry Management
+
+Managing multiple rate limiters (e.g., for different API endpoints or user tiers) and efficiently handling Redis connections is crucial. `oss-ratelimit` provides a powerful registry system for this.
+
+<Files>
+  <Folder name="src" defaultOpen>
+    <Folder name="lib" defaultOpen>
+      <File name="ratelimit.ts" />
+    </Folder>
+    <Folder name="pages">
+      <Folder name="api">
+         <File name="users.ts" />
+         <File name="posts.ts" />
+      </Folder>
+    </Folder>
+     <Folder name="utils">
+      <File name="getIpFromRequest.ts" />
+    </Folder>
+    <File name="middleware.ts" />
+  </Folder>
+  <File name="package.json" />
+  <File name=".env" />
+</Files>
+
+<Steps>
+<Step>
+### 1. Initialize the Registry (`initRateLimit`)
+
+Create a registry instance, optionally providing default Redis options. Define the names your limiters will use with a type union for type safety.
+
+```typescript filename="src/lib/ratelimit.ts"
+import {
+  initRateLimit,
+  RateLimitBuilder,
+  RegisterConfigParam, // Type for registration config
+  slidingWindow,      // Example algorithm
+  fixedWindow,
+} from 'oss-ratelimit';
+
+// Define names for your different limiters (enhances type safety)
+export type LimiterName = 'apiGeneral' | 'apiExpensive' | 'loginAttempts';
+
+// Create the registry instance
+// It's recommended to use environment variables for Redis connection details
+export const rateLimiterRegistry: RateLimitBuilder<LimiterName> = initRateLimit<LimiterName>({
+  // Default Redis options applied to all limiters unless overridden
+  defaultRedisOptions: {
+    url: process.env.RATELIMIT_REDIS_URL || 'redis://localhost:6379',
+    // password: process.env.RATELIMIT_REDIS_PASSWORD,
+    // database: 0, // Default database
+  },
+});
+
+// Define configurations for each named limiter
+export const limiterConfigs: Record<LimiterName, RegisterConfigParam> = {
+  apiGeneral: {
+    limiter: slidingWindow(50, '30 s'), // 50 requests per 30 seconds
+    prefix: 'rl_api_gen', // Unique prefix helps organize Redis keys
+    analytics: true,      // Enable analytics for this limiter
+  },
+  apiExpensive: {
+    limiter: fixedWindow(5, '1 m'),     // 5 requests per minute
+    prefix: 'rl_api_exp',
+    timeout: 500,                      // Shorter Redis timeout for this one
+  },
+  loginAttempts: {
+    limiter: fixedWindow(5, '15 m'),    // 5 login attempts per 15 minutes
+    prefix: 'rl_login',
+    // Example: Using a different Redis DB or instance for sensitive limits
+    // envRedisKey: 'LOGIN_REDIS_URL', // Or use 'redis' options:
+    // redis: { database: 1 }
+  },
+};
+```
+
+</Step>
+<Step>
+### 2. Initialize Limiters (Optional but Recommended)
+
+You can eagerly initialize all defined limiters on application startup using `initializeLimiters`. This ensures Redis connections are established and configurations are validated early.
+
+```typescript filename="src/lib/ratelimit.ts" title="Initialize Limiters Eagerly"
+import { initializeLimiters } from 'oss-ratelimit';
+// ... (previous registry setup code) ...
+
+// Eagerly initialize all limiters defined in limiterConfigs
+// Handle the promise appropriately (e.g., in your server startup logic)
+export const initializedLimitersPromise = initializeLimiters({
+  registry: rateLimiterRegistry,
+  configs: limiterConfigs,
+  verbose: process.env.NODE_ENV !== 'production', // Log progress in dev
+  throwOnError: true, // Recommended: Stop startup if a limiter fails
+});
+
+// You can add listeners to the registry *before* initialization
+rateLimiterRegistry.on('limiterRegister', ({ name, clientKey }) => {
+  console.log(`✅ Limiter "${name}" registered using Redis client: ${clientKey}`);
+});
+rateLimiterRegistry.on('redisError', ({ clientKey, error }) => {
+   console.error(`❌ Redis Error for client ${clientKey}:`, error);
+});
+rateLimiterRegistry.on('limiterError', ({ name, error }) => {
+   console.error(`❌ Failed to initialize limiter "${name}":`, error);
+});
+
+
+// Handle potential initialization errors globally if needed
+initializedLimitersPromise.catch(error => {
+   console.error("💥 Critical error during rate limiter initialization:", error);
+   // Potentially exit the application or disable features relying on rate limiting
+   process.exit(1);
+});
+```
+
+Alternatively, limiters will be initialized automatically (and lazily) the first time `registry.register(name)` or `registry.get(name)` is called for a specific name if not already initialized.
+
+</Step>
+<Step>
+### 3. Accessing Limiters
+
+Use `registry.get(name)` to retrieve an initialized limiter instance.
+
+Reliably getting the *real* client IP behind proxies requires checking specific headers. Use a dedicated utility function for this.
+
+<Accordions>
+<Accordion title="Recommended `getIpFromRequest` Utility">
+
+```typescript filename="src/utils/getIpFromRequest.ts"
+import { NextApiRequest } from 'next';
+import { NextRequest } from 'next/server';
+import { IncomingMessage } from 'http';
+import ipaddr from 'ipaddr.js'; // Optional: yarn add ipaddr.js @types/ipaddr.js
+
+// Type representing possible request objects
+type RequestLike =
+  | NextApiRequest
+  | NextRequest
+  | IncomingMessage
+  | { headers: Headers | NodeJS.Dict<string | string[]>; ip?: string; socket?: { remoteAddress?: string }; connection?: { remoteAddress?: string } };
+
+type HeadersLike = Headers | NodeJS.Dict<string | string[]>;
+
+// Helper to safely get header values
+function getHeader(headers: HeadersLike | undefined, name: string): string | null {
+    if (!headers) return null;
+    const lowerCaseName = name.toLowerCase();
+    if (headers instanceof Headers) return headers.get(lowerCaseName);
+    const headerValue = headers[lowerCaseName] ?? headers[name];
+    if (Array.isArray(headerValue)) return headerValue[0];
+    if (typeof headerValue === 'string') return headerValue;
+    return null;
+}
+
+// Optional IP validation
+function isValidIp(ip: string | null | undefined): ip is string {
+    if (!ip) return false;
+    // Basic check if ipaddr.js is not installed
+    if (typeof ipaddr === 'undefined') {
+      console.warn("ipaddr.js not available. Skipping IP validation.");
+      // Basic check (very permissive):
+      // return /^(?:[0-9]{1,3}\.){3}[0-9]{1,3}$|^::|^[0-9a-f:]+$/i.test(ip);
+      return true; // Assume valid if library isn't present
+    }
+
+    try {
+        ipaddr.parse(ip);
+        return true;
+    } catch (e) { return false; }
+}
+
+/**
+ * Extracts the client's IP address from various request types in Next.js.
+ * Checks standard and platform-specific headers, handles proxies, falls back.
+ */
+export function getIpFromRequest(
+    req: RequestLike,
+    options: { trustHeaders?: string[]; validateIp?: boolean; } = {}
+): string | null {
+    const {
+        trustHeaders = [ // Prioritize headers based on your infra
+            'cf-connecting-ip',       // Cloudflare
+            'x-vercel-forwarded-for', // Vercel
+            'x-real-ip',              // Nginx, Common Proxies
+            'x-forwarded-for',        // Standard, but handle carefully
+        ],
+        validateIp = typeof ipaddr !== 'undefined',
+    } = options;
+
+    const headers = 'headers' in req ? req.headers : undefined;
+
+    // 1. Check NextRequest's 'ip' property (App Router / Middleware - often reliable)
+    if ('ip' in req && req.ip && (!validateIp || isValidIp(req.ip))) {
+         return req.ip;
+    }
+
+    // 2. Check trusted headers
+    if (headers) {
+        for (const headerName of trustHeaders) {
+            let ip = getHeader(headers, headerName);
+            if (ip) {
+                if (headerName.toLowerCase() === 'x-forwarded-for') {
+                    const ips = ip.split(',').map(s => s.trim()).filter(Boolean);
+                    ip = ips[0]; // Leftmost is typically the original client
+                }
+                if (ip && (!validateIp || isValidIp(ip))) return ip;
+            }
+        }
+    }
+
+    // 3. Fallback to direct connection (less reliable behind proxies)
+    let directIp: string | undefined | null = null;
+    if ('socket' in req && req.socket?.remoteAddress) {
+        directIp = req.socket.remoteAddress;
+    } else if ('connection' in req && req.connection?.remoteAddress) {
+        directIp = req.connection.remoteAddress;
+    }
+    // Clean '::ffff:' prefix for IPv4 mapped addresses
+    if (directIp?.startsWith('::ffff:')) directIp = directIp.substring(7);
+    if (directIp && (!validateIp || isValidIp(directIp))) return directIp;
+
+    // 4. Last check on req.ip if validation initially failed
+     if ('ip' in req && req.ip && (!validateIp || isValidIp(req.ip))) {
+        return req.ip;
+    }
+
+    return null; // Could not determine IP
+}
+```
+Install `ipaddr.js` for validation: `npm install ipaddr.js @types/ipaddr.js`
+
+</Accordion>
+</Accordions>
+
+```typescript filename="pages/api/expensive-route.ts"
+import type { NextApiRequest, NextApiResponse } from 'next';
+import { rateLimiterRegistry, LimiterName } from '@/lib/ratelimit'; // Adjust path
+import { getIpFromRequest } from '@/utils/getIpFromRequest';
+
+export default async function handler(req: NextApiRequest, res: NextApiResponse) {
+  const ip = getIpFromRequest(req);
+  if (!ip) return res.status(400).json({ error: 'Cannot determine IP.' });
+
+  try {
+    // Get the specific, pre-initialized limiter instance by name
+    const limiter = rateLimiterRegistry.get('apiExpensive'); // Throws if not initialized
+
+    const { success, remaining } = await limiter.limit(ip);
+
+    // Set headers (implementation omitted for brevity)
+    // ... set X-RateLimit-* headers ...
+
+    if (!success) {
+      // ... return 429 ...
+      return res.status(429).json({ error: 'Too many requests for expensive route.' });
+    }
+
+    // --- Proceed with expensive logic ---
+    res.status(200).json({ result: 'Expensive operation completed!' });
+
+  } catch (error: any) {
+    // Handle errors (e.g., if get() throws, or limit() fails)
+    console.error("Rate limit error on expensive route:", error);
+    return res.status(500).json({ error: 'Internal Server Error' });
+  }
+}
+```
+
+You can also use the helper functions `getInitializedLimiter` or `createLimiterAccessor` for convenience:
+
+```typescript filename="src/lib/ratelimit.ts" title="Create Limiter Accessor"
+import { createLimiterAccessor } from 'oss-ratelimit';
+// ... (previous registry setup code) ...
+
+// Create a type-safe getter function bound to your registry
+// Ensure this is called *after* limiters are likely initialized, or handle errors
+export const getLimiter = createLimiterAccessor(rateLimiterRegistry);
+
+// Usage elsewhere:
+// import { getLimiter } from '@/lib/ratelimit';
+// const generalApiLimiter = getLimiter('apiGeneral');
+```
+
+</Step>
+<Step>
+### 4. Redis Client Reuse
+
+The registry automatically manages and reuses Redis client connections based on the configuration (`RedisOptions` or `envRedisKey`). This prevents creating excessive connections to your Redis server. You can inspect which client a limiter is using via the `limiterRegister` event or programmatically if needed (though usually not required).
+
+</Step>
+</Steps>
+
+
+## Advanced Usage
+
+### Blocking (`block`)
+
+Wait until a request is allowed, up to a configurable maximum time.
+
+```typescript title="Using limiter.block()"
+import { RateLimitExceededError } from 'oss-ratelimit';
+
+const identifier = 'user_abc';
+const limiter = rateLimiterRegistry.get('apiGeneral');
+
+try {
+  // Wait up to 3 seconds for the rate limit to allow the request
+  const response = await limiter.block(identifier, {
+    maxWaitMs: 3000, // Default 5000ms
+    // maxAttempts: 10, // Default 50
+    // retryDelayMs: 50 // Default 100ms (base delay, backs off automatically)
+  });
+  console.log(`Request allowed after waiting. Remaining: ${response.remaining}`);
+  // Proceed with action...
+
+} catch (error) {
+  if (error instanceof RateLimitExceededError) {
+    console.warn(`Rate limit exceeded for ${error.identifier} even after waiting. Retry after ${error.retryAfter}s.`);
+    // Handle timeout (e.g., return an error to the user)
+  } else {
+    console.error("Error during block:", error);
+    // Handle other errors
+  }
+}
+```
+
+### Resetting Limits (`reset`)
+
+Manually clear the rate limit count for a specific identifier. Useful for testing or specific application logic.
+
+```typescript title="Using limiter.reset()"
+const identifierToReset = 'user_xyz';
+const limiter = rateLimiterRegistry.get('loginAttempts');
+
+try {
+  const success = await limiter.reset(identifierToReset);
+  if (success) {
+    console.log(`Rate limit reset successfully for ${identifierToReset}`);
+  } else {
+     console.warn(`Rate limit reset failed for ${identifierToReset} (maybe due to Redis issue and failOpen=true?)`);
+  }
+} catch (error) {
+   console.error(`Failed to reset rate limit for ${identifierToReset}:`, error);
+}
+```
+
+### Checking Status (`getStats`, `check`)
+
+Query the current state of the rate limit for an identifier *without* consuming a request token/count.
+
+```typescript title="Using limiter.getStats() and limiter.check()"
+const identifier = 'ip_1.2.3.4';
+const limiter = rateLimiterRegistry.get('apiGeneral');
+
+// Get detailed stats
+const stats = await limiter.getStats(identifier);
+console.log(`Stats for ${identifier}: Used=${stats.used}, Remaining=${stats.remaining}, Limit=${stats.limit}, ResetsAt=${new Date(stats.reset).toISOString()}`);
+
+// Simple check if allowed
+const isAllowed = await limiter.check(identifier);
+if (isAllowed) {
+  console.log(`${identifier} has requests remaining.`);
+} else {
+  console.log(`${identifier} is currently rate limited.`);
+}
+```
+
+## Configuration Options
+
+Configure the `Ratelimit` instance or registry registration:
+
+<TypeTable
+  type={{
+    redis: { description: 'A connected `RedisClientType` instance or `RedisOptions` / `envRedisKey` (via registry) to create one.', type: 'RedisClientType | RedisOptions | { envRedisKey: string }' },
+    limiter: { description: 'The rate limiting algorithm configuration object created by `fixedWindow`, `slidingWindow`, or `tokenBucket`.', type: 'FixedWindowOptions | SlidingWindowOptions | TokenBucketOptions' },
+    prefix: { description: 'Optional prefix for all Redis keys used by this instance.', type: 'string', default: 'oss-ratelimit' },
+    analytics: { description: 'Enable collection of analytics data (pending requests, throughput). Adds slight overhead.', type: 'boolean', default: 'false' },
+    timeout: { description: 'Max time in milliseconds to wait for Redis operations.', type: 'number', default: '1000' },
+    ephemeralCache: { description: 'Use an in-memory cache as fallback if Redis fails (Sliding Window only).', type: 'boolean', default: 'true' },
+    ephemeralCacheTTL: { description: 'TTL in milliseconds for ephemeral cache entries.', type: 'number', default: '60000' },
+    failOpen: { description: 'If true, allow requests when Redis is unavailable. If false, block requests.', type: 'boolean', default: 'false' },
+    silent: { description: 'Suppress console warnings (e.g., for ephemeral cache usage).', type: 'boolean', default: 'false' },
+  }}
+/>
+
+### Redis Options
+
+Passed directly to `redis.createClient` or used by `getRedisClient`:
+
+<TypeTable
+  type={{
+    url: { description: 'Redis connection string (e.g., `redis[s]://[[username][:password]@][host][:port][/db]`). Takes precedence over individual fields if provided.', type: 'string' },
+    host: { description: 'Redis host.', type: 'string' },
+    port: { description: 'Redis port.', type: 'number' },
+    username: { description: 'Redis username (for ACL).', type: 'string' },
+    password: { description: 'Redis password.', type: 'string' },
+    database: { description: 'Redis database number.', type: 'number' },
+    tls: { description: 'Enable TLS connection.', type: 'boolean' },
+    connectTimeout: { description: 'Connection timeout in ms.', type: 'number', default: '5000' },
+    reconnectStrategy: { description: 'number | false | ((retries: number, cause: Error) => number | false | Error)', },
+  }}
+/>
+

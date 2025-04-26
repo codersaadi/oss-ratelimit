@@ -1,0 +1,42 @@
+---
+title: Best Pactices
+description: Discover recommended strategies and tips for effectively using oss-ratelimit in production, covering performance optimization, security considerations, and common patterns.
+---
+
+## Best Practices
+
+*   **Secure Your Redis:** Use strong passwords, network isolation (firewalls), and consider TLS if connecting over untrusted networks. Do not expose Redis directly to the internet.
+*   **Use the Registry:** For any non-trivial application, use `initRateLimit` and the registry pattern to manage instances and Redis connections efficiently.
+*   **Choose the Right Algorithm:** Select the algorithm that best matches the behavior you want to enforce (bursts vs. smooth limits). Sliding Window is often a good default for APIs.
+*   **Meaningful Identifiers:** Use IP addresses for anonymous users. For authenticated users, prefer User IDs or API Keys for more granular and fair limiting.
+*   **Configure `failOpen` Carefully:** Understand the implications. `failOpen: true` prioritizes availability over strict rate limiting during Redis issues, which might be acceptable for some non-critical limits but dangerous for others (like login attempts). `failOpen: false` (default) is safer but impacts availability if Redis fails.
+*   **Monitor Redis:** Keep an eye on Redis performance (latency, memory usage, CPU). Rate limiting can put significant load on Redis.
+*   **Handle Errors Gracefully:** Implement proper `try...catch` blocks and handle `RedisConnectionError` and other potential issues. Inform users appropriately (e.g., with 429 or 503 status codes).
+*   **Set Response Headers:** Include `X-RateLimit-Limit`, `X-RateLimit-Remaining`, `X-RateLimit-Reset`, and `Retry-After` headers to help clients understand their limits.
+*   **Test Thoroughly:** Test your rate limiting logic under various load conditions and failure scenarios (e.g., simulating Redis downtime).
+*   **Consider Distributed Systems:** If running multiple instances of your app, remember that the Ephemeral Cache is local. Only Redis provides truly distributed state.
+
+## Cleanup
+
+If you manually manage Redis clients or use the registry, ensure you close connections gracefully on application shutdown.
+
+```typescript title="Graceful Shutdown"
+import { rateLimiterRegistry } from '@/lib/ratelimit'; // Your registry instance
+import { closeRedisClient } from 'oss-ratelimit'; // If using standalone client
+
+async function shutdown() {
+  console.log("Shutting down...");
+
+  // Close clients managed by the registry
+  await rateLimiterRegistry.close();
+  console.log("Rate limiter registry closed.");
+
+  // If you created standalone clients with getRedisClient, close them too
+  // await closeRedisClient(); // This closes the *last* client created by getRedisClient
+
+  process.exit(0);
+}
+
+process.on('SIGTERM', shutdown);
+process.on('SIGINT', shutdown);
+```

@@ -1,0 +1,277 @@
+---
+title: Nextjs Integration with Oss Ratelimit Redis
+description: A step-by-step guide on how to seamlessly integrate oss-ratelimit using Redis as a storage backend within your Next.js application, including middleware examples.
+---
+
+import { Accordion, Accordions } from 'fumadocs-ui/components/accordion';
+import { Tab, Tabs } from 'fumadocs-ui/components/tabs';
+
+## Next.js Integration
+
+`oss-ratelimit` works well with Next.js. The key is obtaining a reliable identifier (usually the client's IP address) and applying the limit in the appropriate place (API Routes, Middleware, Route Handlers).
+
+### 1. Getting the Client IP Address
+
+Reliably getting the *real* client IP behind proxies requires checking specific headers. Use a dedicated utility function for this.
+
+<Accordions>
+<Accordion title="Recommended `getIpFromRequest` Utility">
+
+```typescript filename="src/utils/getIpFromRequest.ts"
+import { NextApiRequest } from 'next';
+import { NextRequest } from 'next/server';
+import { IncomingMessage } from 'http';
+import ipaddr from 'ipaddr.js'; // Optional: yarn add ipaddr.js @types/ipaddr.js
+
+// Type representing possible request objects
+type RequestLike =
+  | NextApiRequest
+  | NextRequest
+  | IncomingMessage
+  | { headers: Headers | NodeJS.Dict<string | string[]>; ip?: string; socket?: { remoteAddress?: string }; connection?: { remoteAddress?: string } };
+
+type HeadersLike = Headers | NodeJS.Dict<string | string[]>;
+
+// Helper to safely get header values
+function getHeader(headers: HeadersLike | undefined, name: string): string | null {
+    if (!headers) return null;
+    const lowerCaseName = name.toLowerCase();
+    if (headers instanceof Headers) return headers.get(lowerCaseName);
+    const headerValue = headers[lowerCaseName] ?? headers[name];
+    if (Array.isArray(headerValue)) return headerValue[0];
+    if (typeof headerValue === 'string') return headerValue;
+    return null;
+}
+
+// Optional IP validation
+function isValidIp(ip: string | null | undefined): ip is string {
+    if (!ip) return false;
+    // Basic check if ipaddr.js is not installed
+    if (typeof ipaddr === 'undefined') {
+      console.warn("ipaddr.js not available. Skipping IP validation.");
+      // Basic check (very permissive):
+      // return /^(?:[0-9]{1,3}\.){3}[0-9]{1,3}$|^::|^[0-9a-f:]+$/i.test(ip);
+      return true; // Assume valid if library isn't present
+    }
+
+    try {
+        ipaddr.parse(ip);
+        return true;
+    } catch (e) { return false; }
+}
+
+/**
+ * Extracts the client's IP address from various request types in Next.js.
+ * Checks standard and platform-specific headers, handles proxies, falls back.
+ */
+export function getIpFromRequest(
+    req: RequestLike,
+    options: { trustHeaders?: string[]; validateIp?: boolean; } = {}
+): string | null {
+    const {
+        trustHeaders = [ // Prioritize headers based on your infra
+            'cf-connecting-ip',       // Cloudflare
+            'x-vercel-forwarded-for', // Vercel
+            'x-real-ip',              // Nginx, Common Proxies
+            'x-forwarded-for',        // Standard, but handle carefully
+        ],
+        validateIp = typeof ipaddr !== 'undefined',
+    } = options;
+
+    const headers = 'headers' in req ? req.headers : undefined;
+
+    // 1. Check NextRequest's 'ip' property (App Router / Middleware - often reliable)
+    if ('ip' in req && req.ip && (!validateIp || isValidIp(req.ip))) {
+         return req.ip;
+    }
+
+    // 2. Check trusted headers
+    if (headers) {
+        for (const headerName of trustHeaders) {
+            let ip = getHeader(headers, headerName);
+            if (ip) {
+                if (headerName.toLowerCase() === 'x-forwarded-for') {
+                    const ips = ip.split(',').map(s => s.trim()).filter(Boolean);
+                    ip = ips[0]; // Leftmost is typically the original client
+                }
+                if (ip && (!validateIp || isValidIp(ip))) return ip;
+            }
+        }
+    }
+
+    // 3. Fallback to direct connection (less reliable behind proxies)
+    let directIp: string | undefined | null = null;
+    if ('socket' in req && req.socket?.remoteAddress) {
+        directIp = req.socket.remoteAddress;
+    } else if ('connection' in req && req.connection?.remoteAddress) {
+        directIp = req.connection.remoteAddress;
+    }
+    // Clean '::ffff:' prefix for IPv4 mapped addresses
+    if (directIp?.startsWith('::ffff:')) directIp = directIp.substring(7);
+    if (directIp && (!validateIp || isValidIp(directIp))) return directIp;
+
+    // 4. Last check on req.ip if validation initially failed
+     if ('ip' in req && req.ip && (!validateIp || isValidIp(req.ip))) {
+        return req.ip;
+    }
+
+    return null; // Could not determine IP
+}
+```
+Install `ipaddr.js` for validation: `npm install ipaddr.js @types/ipaddr.js`
+
+</Accordion>
+</Accordions>
+
+### 2. Applying Limits
+
+<Tabs items={['API Route (Pages)', 'Middleware', 'Route Handler (App)']}>
+  <Tab value="API Route (Pages)">
+    Use the pattern shown in the "Basic Usage" example above. Get the IP using `getIpFromRequest(req)`, get your limiter instance from the registry, call `.limit(ip)`, and handle the response (setting headers, returning 429 on failure).
+
+    ```typescript filename="pages/api/protected.ts"
+    import type { NextApiRequest, NextApiResponse } from 'next';
+    import { rateLimiterRegistry } from '@/lib/ratelimit';
+    import { getIpFromRequest } from '@/utils/getIpFromRequest';
+
+    export default async function handler(req: NextApiRequest, res: NextApiResponse) {
+      const ip = getIpFromRequest(req);
+      if (!ip) return res.status(400).json({ error: 'Cannot determine IP.' });
+
+      try {
+        const limiter = rateLimiterRegistry.get('apiGeneral'); // Or await register
+        const { success, limit, remaining, reset, retryAfter } = await limiter.limit(ip);
+
+        res.setHeader('X-RateLimit-Limit', limit);
+        res.setHeader('X-RateLimit-Remaining', remaining);
+        res.setHeader('X-RateLimit-Reset', Math.ceil(reset / 1000));
+
+        if (!success) {
+          if(retryAfter) res.setHeader('Retry-After', retryAfter);
+          return res.status(429).json({ error: 'Too Many Requests' });
+        }
+
+        // SUCCESS: Proceed with API logic
+        res.status(200).json({ data: 'Super secret stuff' });
+
+      } catch (error) {
+        console.error("Ratelimit error in API route:", error);
+        return res.status(500).json({ error: 'Internal Server Error' });
+      }
+    }
+    ```
+  </Tab>
+  <Tab value="Middleware">
+    <Callout type="error">
+      This is Not Recommended (use it in route handler,Api calls or Server Actions)
+     </Callout>
+    <Callout type="error" title="Edge Runtime Compatibility">
+    
+      Next.js Middleware often runs in the Edge Runtime. `oss-ratelimit` currently uses `node-redis`, which is **NOT** compatible with the Edge Runtime. To use rate limiting in Edge Middleware, you would need:
+      1.  A Redis client compatible with the Edge.
+      2.  Need Implementations on `oss-ratelimit` to accept/use such a client.
+
+      The following example assumes your middleware runs in the **Node.js runtime** or you've made the necessary adaptations for the Edge.
+    </Callout>
+
+    ```typescript filename="middleware.ts"
+    import { NextResponse } from 'next/server';
+    import type { NextRequest } from 'next/server';
+    import { getIpFromRequest } from '@/utils/getIpFromRequest';
+    import { rateLimiterRegistry, LimiterName } from '@/lib/ratelimit';
+    // Ensure your registry initialization is compatible with where middleware runs
+
+    export const config = {
+      // Apply middleware to specific paths
+      matcher: ['/api/public/:path*', '/dashboard/:path*'],
+    };
+
+    export async function middleware(request: NextRequest) {
+      const ip = getIpFromRequest(request);
+      if (!ip) {
+        // Decide how to handle: block, allow, redirect?
+        return new NextResponse(JSON.stringify({ error: 'IP unavailable' }), { status: 400 });
+      }
+
+      try {
+        // Choose limiter based on path, etc.
+        const limiterName: LimiterName = request.nextUrl.pathname.startsWith('/api')
+          ? 'apiGeneral'
+          : 'apiExpensive'; // Example logic
+
+        // Get or initialize limiter (ensure registry is accessible)
+        // Using .register() handles lazy initialization safely in middleware
+        const limiter = await rateLimiterRegistry.register(limiterName);
+
+        const { success, limit, remaining, reset, retryAfter } = await limiter.limit(ip);
+
+        // Prepare headers for response or continuation
+        const headers = new Headers(request.headers);
+        headers.set('X-RateLimit-Limit', String(limit));
+        headers.set('X-RateLimit-Remaining', String(remaining));
+        headers.set('X-RateLimit-Reset', String(Math.ceil(reset / 1000)));
+        headers.set('X-Client-IP', ip); // Forward identified IP
+
+        if (!success) {
+          if(retryAfter) headers.set('Retry-After', String(retryAfter));
+          return new NextResponse(
+            JSON.stringify({ error: 'Rate limit exceeded' }),
+            { status: 429, headers }
+          );
+        }
+
+        // Rate limit passed, continue request with updated headers
+        return NextResponse.next({
+          request: { headers },
+        });
+
+      } catch (error) {
+        console.error("Ratelimit error in middleware:", error);
+        // Handle failOpen/failClosed scenarios based on config and error type
+        return new NextResponse(JSON.stringify({ error: 'Server Error' }), { status: 500 });
+      }
+    }
+    ```
+  </Tab>
+  <Tab value="Route Handler (App)">
+    Similar to Pages API Routes, but using `NextRequest` and `NextResponse`.
+
+    ```typescript filename="app/api/items/route.ts"
+    import { NextRequest, NextResponse } from 'next/server';
+    import { rateLimiterRegistry } from '@/lib/ratelimit';
+    import { getIpFromRequest } from '@/utils/getIpFromRequest';
+
+    export async function GET(request: NextRequest) {
+      const ip = getIpFromRequest(request);
+      if (!ip) {
+        return NextResponse.json({ error: 'Cannot determine IP.' }, { status: 400 });
+      }
+
+      try {
+        const limiter = rateLimiterRegistry.get('apiGeneral'); // Or await register
+        const { success, limit, remaining, reset, retryAfter } = await limiter.limit(ip);
+
+        const headers = new Headers();
+        headers.set('X-RateLimit-Limit', String(limit));
+        headers.set('X-RateLimit-Remaining', String(remaining));
+        headers.set('X-RateLimit-Reset', String(Math.ceil(reset / 1000)));
+
+        if (!success) {
+          if(retryAfter) headers.set('Retry-After', String(retryAfter));
+          return NextResponse.json(
+              { error: 'Too Many Requests' },
+              { status: 429, headers }
+          );
+        }
+
+        // SUCCESS: Proceed with route handler logic
+        return NextResponse.json({ data: ['item1', 'item2'] }, { status: 200, headers });
+
+      } catch (error) {
+        console.error("Ratelimit error in route handler:", error);
+        return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 });
+      }
+    }
+    ```
+  </Tab>
+</Tabs>

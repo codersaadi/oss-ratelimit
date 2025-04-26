@@ -1,0 +1,47 @@
+---
+title: Error Handling 
+description: Learn how oss-ratelimit signals when a rate limit is exceeded and discover strategies for catching these errors and providing appropriate responses to your users.
+---
+
+
+## Error Handling
+
+`oss-ratelimit` throws specific errors and emits events.
+
+### Custom Error Types
+
+*   **`RatelimitError`**: Base class for all library errors.
+*   **`RedisConnectionError`**: Thrown when connecting to or communicating with Redis fails (and `failOpen` is false).
+*   **`RateLimitExceededError`**: Thrown by `block()` if the rate limit is still exceeded after the max wait time. Contains `retryAfter` and `identifier`.
+
+### Handling Errors
+
+Use `try...catch` blocks and check error types:
+
+```typescript title="Error Handling Example"
+import { RatelimitError, RedisConnectionError, RateLimitExceededError } from 'oss-ratelimit';
+
+// Inside an async function where you call limiter methods...
+try {
+   const result = await limiter.limit(identifier);
+   // ... handle success ...
+} catch (error) {
+   if (error instanceof RateLimitExceededError) {
+      // Specific handling for block() timeout
+      console.error(`Blocking failed for ${error.identifier}, retry after ${error.retryAfter}s`);
+      // Return 429 or appropriate error
+   } else if (error instanceof RedisConnectionError) {
+      // Specific handling if Redis is down (and failOpen: false)
+      console.error(`Redis connection error: ${error.message}`);
+      // Return 503 Service Unavailable or similar
+   } else if (error instanceof RatelimitError) {
+      // Catch other library-specific errors
+       console.error(`Rate limiting operational error: ${error.message}`);
+       // Return 500
+   } else {
+      // Handle unexpected errors
+      console.error(`Unexpected error: ${error}`);
+      // Return 500
+   }
+}
+```

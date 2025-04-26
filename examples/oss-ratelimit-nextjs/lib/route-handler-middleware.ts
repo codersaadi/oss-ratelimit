@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { ensureLimitersInitialized, NextAppLimiter, getLimiter } from './ratelimiter';
-import { getIpFromRequest } from './get-ip';
+import { ensureLimitersInitialized, NextAppLimiter, getLimiter } from './ratelimiter-registry';
+import { getIpFromRequest } from './get-ip-util';
 
 export async function withRateLimit(
   request: NextRequest,

@@ -1,0 +1,214 @@
+---
+title: Contributing to oss-ratelimit
+description: Find out how you can contribute to the development of oss-ratelimit, including reporting bugs, suggesting features, and submitting code changes.
+---
+
+import { Card, Cards } from 'fumadocs-ui/components/card';
+import { Callout } from 'fumadocs-ui/components/callout';
+import { Step, Steps } from 'fumadocs-ui/components/steps';
+
+# Contributing to oss-ratelimit
+
+First off, thank you for considering contributing to `oss-ratelimit`! We appreciate you taking the time to help improve this project. Your contributions make the open-source community thrive.
+
+This project is maintained by [Saad Bukhari](https://github.com/codersaadi) (GitHub: @codersaadi).
+
+There are many ways to contribute, from reporting bugs and suggesting features to writing code and improving documentation.
+
+## Ways to Contribute
+
+<Cards>
+  <Card title="Reporting Bugs" href="https://github.com/codersaadi/oss-ratelimit/issues/new?assignees=&labels=bug&template=bug_report.md&title=%5BBUG%5D">
+    Found something not working as expected? Please open a bug report using the issue template. Provide clear steps to reproduce, environment details, and logs if possible.
+  </Card>
+  <Card title="Requesting Features" href="https://github.com/codersaadi/oss-ratelimit/issues/new?assignees=&labels=enhancement&template=feature_request.md&title=%5BFEAT%5D">
+    Have an idea for a new feature or an improvement to an existing one? Open an issue using the feature request template to discuss it.
+  </Card>
+   <Card title="Asking Questions" href="https://github.com/codersaadi/oss-ratelimit/discussions">
+    Have questions about usage, architecture, or contribution? Feel free to start a discussion on GitHub.
+  </Card>
+</Cards>
+
+## Code Contributions
+
+If you'd like to contribute code, please follow these steps:
+
+<Steps>
+
+<Step>
+### 1. Prerequisites
+
+*   **Node.js:** A recent LTS version (check `.nvmrc` if available).
+*   **Package Manager:** We recommend using `pnpm` (`npm install -g pnpm`), but `npm` or `yarn` should also work.
+*   **Git:** For version control.
+*   **Redis:** A running Redis instance (local or remote) for testing.
+
+<Callout type="warn" title="Local Redis">
+You'll need a Redis server accessible for running the library and its tests. You can easily run one using Docker: `docker run -d --name oss-ratelimit-redis -p 6379:6379 redis`
+</Callout>
+
+</Step>
+
+<Step>
+### 2. Fork & Clone
+
+*   **Fork** the repository on GitHub.
+*   **Clone** your fork locally:
+    ```bash title="Clone your fork"
+    git clone https://github.com/YOUR_USERNAME/oss-ratelimit.git
+    cd oss-ratelimit
+    ```
+*   Add the original repository as an upstream remote:
+    ```bash title="Add upstream remote"
+    git remote add upstream https://github.com/codersaadi/oss-ratelimit.git
+    ```
+
+</Step>
+
+<Step>
+### 3. Install Dependencies
+
+Install project dependencies using your preferred package manager:
+
+```bash title="Install dependencies (using pnpm)"
+pnpm install
+```
+
+</Step>
+
+<Step>
+### 4. Environment Setup
+
+The library might require environment variables, especially for connecting to Redis during tests or development.
+
+*   Create a `.env` file in the project root (copy `.env.example` if it exists).
+*   Set the necessary variables, typically `RATELIMIT_REDIS_URL`:
+    ```dotenv filename=".env"
+    RATELIMIT_REDIS_URL=redis://localhost:6379
+    # Add other variables if needed
+    ```
+
+</Step>
+
+<Step>
+### 5. Create a Branch
+
+Create a new branch for your changes, based on the `main` branch (or the relevant development branch). Use a descriptive name.
+
+```bash title="Create a feature branch"
+# Fetch latest changes from upstream
+git fetch upstream
+git checkout upstream/main
+git pull
+
+# Create your branch
+git checkout -b feature/your-descriptive-name # or fix/your-bug-fix
+```
+
+</Step>
+
+<Step>
+### 6. Make Your Changes
+
+*   Write your code, following the existing style and patterns.
+*   Ensure your code is well-commented, especially for complex logic.
+*   Add or update tests for your changes (see Testing section).
+*   Update documentation (README, JSDoc, Fumadocs pages) if necessary.
+
+</Step>
+
+<Step>
+### 7. Linting & Formatting
+
+We use tools like ESLint, Prettier, or Biome to maintain code quality and consistency. Run the linting and formatting commands before committing.
+
+```bash title="Check and fix code style"
+# Check for linting errors (adjust command if needed)
+pnpm lint
+
+# Automatically format code (adjust command if needed)
+pnpm format
+```
+
+<Callout>
+Please ensure your code adheres to the project's linting and formatting rules. Commits might be blocked or CI checks might fail otherwise.
+</Callout>
+
+</Step>
+
+<Step>
+### 8. Testing
+
+Ensure all existing tests pass, and add new tests to cover your changes.
+
+```bash title="Run tests"
+pnpm test
+# Or specific test command if defined
+```
+
+<Callout type="info">
+Contributions that include tests are much more likely to be accepted quickly. Tests ensure your changes work as expected and prevent regressions in the future.
+</Callout>
+
+</Step>
+
+<Step>
+### 9. Commit Your Changes
+
+*   Stage your changes (`git add .`).
+*   Commit them with a clear and descriptive message. We recommend following the [Conventional Commits](https://www.conventionalcommits.org/) specification.
+    ```bash title="Example Commit"
+    git commit -m "feat: add token bucket algorithm support"
+    # or
+    git commit -m "fix: correct calculation in sliding window reset"
+    # or
+    git commit -m "docs: update contribution guidelines"
+    ```
+
+</Step>
+
+<Step>
+### 10. Push and Create Pull Request
+
+*   Push your branch to your fork:
+    ```bash title="Push to your fork"
+    git push origin feature/your-descriptive-name
+    ```
+*   Go to the original `oss-ratelimit` repository on GitHub.
+*   Click "New pull request" or respond to the prompt to create a PR from your recently pushed branch.
+*   **Base Repository:** `codersaadi/oss-ratelimit` | **Base Branch:** `main` (or relevant dev branch)
+*   **Head Repository:** `YOUR_USERNAME/oss-ratelimit` | **Compare Branch:** `feature/your-descriptive-name`
+*   **Fill out the PR template:**
+    *   Provide a clear title and description of your changes.
+    *   Link to any relevant issues (e.g., `Fixes #123`).
+    *   Explain the purpose of the changes and how you tested them.
+*   Submit the Pull Request.
+
+</Step>
+
+<Step>
+### 11. Code Review
+
+*   The maintainer(s) will review your pull request.
+*   Be prepared to discuss your changes and make adjustments based on feedback.
+*   Once approved, your changes will be merged! 🎉
+
+</Step>
+
+</Steps>
+
+## Code of Conduct
+
+Please note that this project is released with a Contributor Code of Conduct. By participating in this project you agree to abide by its terms. Please read the `CODE_OF_CONDUCT.md` file.
+
+<Callout type="warn">
+We are committed to providing a welcoming and inclusive environment. Any violations of the Code of Conduct may result in temporary or permanent bans from participating in the project community.
+</Callout>
+
+## License
+
+By contributing, you agree that your contributions will be licensed under the MIT License that covers the project. Make sure you understand its implications.
+
+---
+
+Thank you again for your interest in contributing to `oss-ratelimit`!

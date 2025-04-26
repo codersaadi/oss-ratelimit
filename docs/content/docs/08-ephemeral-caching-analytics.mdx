@@ -1,0 +1,31 @@
+---
+title: Emphemeral Caching & Analyics RateLimit
+description: Explore using ephemeral (in-memory) caching for high-performance, short-term rate limits and understand how oss-ratelimit helps track usage analytics.
+---
+
+## Ephemeral Cache
+
+When `ephemeralCache: true` (the default), the library maintains a simple in-memory cache. If Redis becomes unavailable during a `.limit()` call for a **Sliding Window** limiter, it will fall back to this cache to provide *approximate* rate limiting.
+
+<Callout type="warn" title="Limitations">
+*   **Sliding Window Only:** Currently only works with the `slidingWindow` algorithm. Other algorithms will either throw an error or fail open if Redis fails, depending on `failOpen`.
+*   **Not Distributed:** The cache is local to each process/instance. It won't work correctly for distributed systems behind a load balancer unless you implement sticky sessions (which often negates the benefit).
+*   **Less Precise:** It provides basic counting within a window but lacks the precision and atomic guarantees of Redis.
+*   **Memory Usage:** Stores counters in memory, potentially consuming more RAM under high load or with many unique identifiers.
+</Callout>
+
+It's primarily useful as a basic resilience mechanism for single-instance deployments or during brief Redis hiccups when using Sliding Window. For robust distributed systems, focus on Redis high availability.
+
+## Analytics
+
+Set `analytics: true` in the configuration to enable tracking of additional metrics.
+
+When enabled, the `RatelimitResponse` from `.limit()` will include:
+
+*   `pending`: (Approximation) The current number of requests counted within the window or tokens used (depends on algorithm).
+*   `throughput`: (Approximation) Requests seen in the last second for the specific identifier (calculated via Redis ZCOUNT on a secondary key).
+
+<Callout>
+Enabling analytics adds a small overhead due to extra Redis commands (`ZADD`, `ZCOUNT`, `PEXPIRE` on the analytics key). Only enable it if you need these specific metrics per request.
+</Callout>
+

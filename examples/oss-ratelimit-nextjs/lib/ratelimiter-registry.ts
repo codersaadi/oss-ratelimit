@@ -1,6 +1,4 @@
-// app/lib/rate-limiters.ts
-import { initRateLimit, slidingWindow, initializeLimiters, Ratelimit } from '../../../src';
-
+import { initRateLimit, slidingWindow, initializeLimiters, Ratelimit,  } from 'oss-ratelimit';
 // Define your limiter names
 export type NextAppLimiter = 'api' | 'auth' | 'publicPages' | 'webhooks';
 
@@ -47,3 +45,20 @@ export function ensureLimitersInitialized() {
   }
   return initLimtersPromise;
 }
+
+import { closeRedisClient } from 'oss-ratelimit'; // If using standalone client
+ 
+async function shutdown() {
+  console.log("Shutting down...");
+ 
+  // Close clients managed by the registry
+  await rl.close();
+  console.log("Rate limiter registry closed.");
+  // If you created standalone clients with getRedisClient, close them too
+  // await closeRedisClient(); // This closes the *last* client created by getRedisClient
+ 
+  process.exit(0);
+}
+ 
+process.on('SIGTERM', shutdown);
+process.on('SIGINT', shutdown);

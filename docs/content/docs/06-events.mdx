@@ -1,0 +1,37 @@
+---
+title: Using Event Emitter 
+description:  Leverage the built-in Node.js EventEmitter in oss-ratelimit to subscribe to events like 'limitReached' or 'error' for monitoring, logging, or custom logic.
+---
+
+
+### Events
+
+The `Ratelimit` instance and the `RateLimitBuilder` (registry) are EventEmitters.
+
+**Ratelimit Instance Events:**
+*   `error`: Emitted when an operational error occurs (e.g., Redis issue). Passes the error object.
+*   `allowed`: Emitted when a `.limit()` call succeeds. Passes `{ identifier, remaining, limit }`.
+*   `limited`: Emitted when a `.limit()` call fails due to rate limiting. Passes `{ identifier, remaining, limit }`.
+*   `failOpen`: Emitted when Redis fails but `failOpen: true` allows the request. Passes `{ identifier, error }`.
+*   `waiting`: Emitted by `block()` on each retry attempt. Passes `{ identifier, attempt, waitTime, elapsed }`.
+*   `reset`: Emitted when `.reset()` successfully clears a limit. Passes `{ identifier }`.
+
+**Registry (`RateLimitBuilder`) Events:**
+*   `redisConnect`: Emitted when a managed Redis client connects successfully. Passes `{ clientKey }`.
+*   `redisError`: Emitted when a managed Redis client encounters an error. Passes `{ clientKey, error }`.
+*   `limiterRegister`: Emitted when a limiter instance is successfully created and registered. Passes `{ name, clientKey }`.
+*   `limiterError`: Emitted when registering or initializing a limiter fails. Passes `{ name, error }`.
+*   `close`: Emitted when the registry's `close()` method is called.
+
+```typescript title="Listening to Registry Events"
+import { rateLimiterRegistry } from '@/lib/ratelimit';
+
+rateLimiterRegistry.on('redisError', ({ clientKey, error }) => {
+  // Log Redis errors centrally, maybe send to monitoring
+  console.error(`[Registry] Redis Client Error (${clientKey}):`, error);
+});
+
+rateLimiterRegistry.on('limiterError', ({ name, error }) => {
+   console.error(`[Registry] Limiter Init Error (${name}):`, error);
+});
+```
